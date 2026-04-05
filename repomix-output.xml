@@ -1,0 +1,1127 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: **/*.{js,jsx,json}
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+eslint.config.js
+package.json
+src/App.jsx
+src/components/Navbar.jsx
+src/components/PitchCard.jsx
+src/components/ProtectedRoute.jsx
+src/lib/supabaseClient.js
+src/main.jsx
+src/pages/CreatePitch.jsx
+src/pages/Dashboard.jsx
+src/pages/Home.jsx
+src/pages/Login.jsx
+src/pages/PitchDetail.jsx
+src/pages/Profile.jsx
+src/pages/Register.jsx
+src/store/slices/authSlice.js
+src/store/slices/pitchSlice.js
+src/store/store.js
+vite.config.js
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="eslint.config.js">
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import { defineConfig, globalIgnores } from 'eslint/config'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{js,jsx}'],
+    extends: [
+      js.configs.recommended,
+      reactHooks.configs.flat.recommended,
+      reactRefresh.configs.vite,
+    ],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        ecmaFeatures: { jsx: true },
+        sourceType: 'module',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+    },
+  },
+])
+</file>
+
+<file path="package.json">
+{
+  "name": "invest-hub",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.11.2",
+    "@supabase/supabase-js": "^2.100.1",
+    "@tailwindcss/vite": "^4.2.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-redux": "^9.2.0",
+    "react-router": "^7.13.2",
+    "tailwindcss": "^4.2.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.4.0",
+    "vite": "^8.0.1"
+  }
+}
+</file>
+
+<file path="src/App.jsx">
+import { useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router";
+import { useDispatch } from "react-redux";
+import { supabase } from "./lib/supabaseClient";
+import { setUser, clearAuth, setProfile } from "./store/slices/authSlice";
+
+import Navbar from "./components/Navbar";
+import ProtectedRoute from "./components/ProtectedRoute";
+
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Dashboard from "./pages/Dashboard";
+import CreatePitch from "./pages/CreatePitch";
+import PitchDetail from "./pages/PitchDetail";
+import Profile from "./pages/Profile";
+
+function App() {
+  const dispatch = useDispatch();
+
+  const fetchProfile = async (userId) => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .single();
+    if (data) dispatch(setProfile(data));
+  };
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        dispatch(setUser(session.user));
+        fetchProfile(session.user.id);
+      } else {
+        dispatch(clearAuth());
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          dispatch(setUser(session.user));
+          fetchProfile(session.user.id);
+        } else {
+          dispatch(clearAuth());
+        }
+      },
+    );
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  return (
+    <BrowserRouter>
+      <Navbar />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/pitch/:id" element={<PitchDetail />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/create-pitch" element={<CreatePitch />} />
+          <Route path="/profile" element={<Profile />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
+</file>
+
+<file path="src/components/Navbar.jsx">
+import { Link, useNavigate } from "react-router";
+import { useSelector } from "react-redux";
+import { supabase } from "../lib/supabaseClient";
+
+function Navbar() {
+  const { user, profile } = useSelector((state) => state.auth);
+  const navigate = useNavigate();
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    navigate("/login");
+  }
+
+  return (
+    <nav className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+      <Link to="/" className="text-xl font-bold text-indigo-600">
+        InvestHub
+      </Link>
+      <div className="flex items-center gap-4">
+        <Link to="/" className="text-gray-600 hover:text-indigo-600">
+          Pitches
+        </Link>
+        {user ? (
+          <>
+            <Link
+              to="/dashboard"
+              className="text-gray-600 hover:text-indigo-600"
+            >
+              Dashboard
+            </Link>
+            {profile?.role === "owner" && (
+              <Link
+                to="/create-pitch"
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+              >
+                + New Pitch
+              </Link>
+            )}
+            <Link to="/profile" className="text-gray-600 hover:text-indigo-600">
+              Profile
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="text-red-500 hover:text-red-700"
+            >
+              Logout
+            </button>
+          </>
+        ) : (
+          <>
+            <Link to="/login" className="text-gray-600 hover:text-indigo-600">
+              Login
+            </Link>
+            <Link
+              to="/register"
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+            >
+              Register
+            </Link>
+          </>
+        )}
+      </div>
+    </nav>
+  );
+}
+
+export default Navbar;
+</file>
+
+<file path="src/components/PitchCard.jsx">
+import { Link } from "react-router";
+
+function PitchCard({ pitch }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition">
+      <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">
+        {pitch.category || "General"}
+      </span>
+      <h3 className="text-lg font-semibold text-gray-800 mt-3">
+        {pitch.title}
+      </h3>
+      <p className="text-gray-500 text-sm mt-1 line-clamp-2">
+        {pitch.description}
+      </p>
+      <div className="flex items-center justify-between mt-4">
+        <span className="text-indigo-600 font-bold">
+          ${Number(pitch.funding_goal).toLocaleString()}
+        </span>
+        <Link
+          to={`/pitch/${pitch.id}`}
+          className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700"
+        >
+          View Pitch
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export default PitchCard;
+</file>
+
+<file path="src/components/ProtectedRoute.jsx">
+import { useSelector } from "react-redux";
+import { Navigate, Outlet } from "react-router";
+
+function ProtectedRoute() {
+  const { user, loading } = useSelector((state) => state.auth);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen text-gray-500">
+        Loading...
+      </div>
+    );
+  }
+
+  return user ? <Outlet /> : <Navigate to="/login" />;
+}
+
+export default ProtectedRoute;
+</file>
+
+<file path="src/lib/supabaseClient.js">
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+export const supabase = createClient(supabaseUrl, supabaseKey);
+</file>
+
+<file path="src/main.jsx">
+import { createRoot } from "react-dom/client";
+import { Provider } from "react-redux";
+import { store } from "./store/store";
+import "./index.css";
+import App from "./App.jsx";
+
+createRoot(document.getElementById("root")).render(
+  <Provider store={store}>
+    <App />
+  </Provider>,
+);
+</file>
+
+<file path="src/pages/CreatePitch.jsx">
+import { useState } from "react";
+import { supabase } from "../lib/supabaseClient";
+import { useSelector } from "react-redux";
+import { useNavigate } from "react-router";
+
+function CreatePitch() {
+  const { user } = useSelector((state) => state.auth);
+  const navigate = useNavigate();
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    funding_goal: "",
+    category: "",
+    video_url: "",
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function handleChange(e) {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    const { error: insertError } = await supabase.from("pitches").insert({
+      ...form,
+      owner_id: user.id,
+      funding_goal: Number(form.funding_goal),
+    });
+
+    if (insertError) {
+      setError(insertError.message);
+      setLoading(false);
+      return;
+    }
+
+    navigate("/dashboard");
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto px-6 py-10">
+      <h1 className="text-3xl font-bold text-gray-800 mb-6">
+        Create a New Pitch
+      </h1>
+      {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-5 bg-white p-8 rounded-2xl shadow-md"
+      >
+        <div>
+          <label className="text-sm text-gray-600">Pitch Title *</label>
+          <input
+            name="title"
+            required
+            onChange={handleChange}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+        <div>
+          <label className="text-sm text-gray-600">Description</label>
+          <textarea
+            name="description"
+            rows={4}
+            onChange={handleChange}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+        <div>
+          <label className="text-sm text-gray-600">Funding Goal ($)</label>
+          <input
+            name="funding_goal"
+            type="number"
+            onChange={handleChange}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+        <div>
+          <label className="text-sm text-gray-600">Category</label>
+          <input
+            name="category"
+            onChange={handleChange}
+            placeholder="e.g. Tech, Health, Finance"
+            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+        <div>
+          <label className="text-sm text-gray-600">Video URL (optional)</label>
+          <input
+            name="video_url"
+            type="url"
+            onChange={handleChange}
+            placeholder="https://youtube.com/..."
+            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {loading ? "Submitting..." : "Create Pitch"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default CreatePitch;
+</file>
+
+<file path="src/pages/Dashboard.jsx">
+import { useEffect, useState } from "react";
+import { useSelector } from "react-redux";
+import { supabase } from "../lib/supabaseClient";
+import PitchCard from "../components/PitchCard";
+import { Link } from "react-router";
+
+function Dashboard() {
+  const { user, profile } = useSelector((state) => state.auth);
+  const [myPitches, setMyPitches] = useState([]);
+  const [myInterests, setMyInterests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchMyPitches = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("pitches")
+      .select("*")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: false });
+    setMyPitches(data || []);
+    setLoading(false);
+  };
+
+  const fetchMyInterests = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("interests")
+      .select("*, pitches(*)")
+      .eq("investor_id", user.id);
+    setMyInterests(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (profile?.role === "owner") fetchMyPitches();
+    if (profile?.role === "investor") fetchMyInterests();
+  }, [profile]);
+
+  const deletePitch = async (id) => {
+    if (!confirm("Delete this pitch?")) return;
+    await supabase.from("pitches").delete().eq("id", id);
+    setMyPitches((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto px-6 py-10">
+      <h1 className="text-3xl font-bold text-gray-800 mb-2">My Dashboard</h1>
+      <p className="text-gray-500 mb-8">
+        Hello, <strong>{profile?.full_name}</strong> — you are logged in as a{" "}
+        <span className="text-indigo-600 font-semibold">{profile?.role}</span>
+      </p>
+
+      {profile?.role === "owner" && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-700">My Pitches</h2>
+            <Link
+              to="/create-pitch"
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm"
+            >
+              + New Pitch
+            </Link>
+          </div>
+          {loading ? (
+            <p className="text-gray-400">Loading...</p>
+          ) : myPitches.length === 0 ? (
+            <p className="text-gray-400">
+              You haven't created any pitches yet.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {myPitches.map((pitch) => (
+                <div key={pitch.id} className="relative">
+                  <PitchCard pitch={pitch} />
+                  <button
+                    onClick={() => deletePitch(pitch.id)}
+                    className="absolute top-3 right-3 text-xs text-red-500 hover:text-red-700"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {profile?.role === "investor" && (
+        <>
+          <h2 className="text-xl font-semibold text-gray-700 mb-4">
+            Pitches I'm Interested In
+          </h2>
+          {loading ? (
+            <p className="text-gray-400">Loading...</p>
+          ) : myInterests.length === 0 ? (
+            <p className="text-gray-400">
+              You haven't expressed interest in any pitch yet.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {myInterests.map((item) => (
+                <PitchCard key={item.id} pitch={item.pitches} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export default Dashboard;
+</file>
+
+<file path="src/pages/Home.jsx">
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
+import PitchCard from "../components/PitchCard";
+
+function Home() {
+  const [pitches, setPitches] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const fetchPitches = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("pitches")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (!error) setPitches(data);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchPitches();
+  }, []);
+
+  const filtered = pitches.filter(
+    (p) =>
+      p.title.toLowerCase().includes(search.toLowerCase()) ||
+      (p.category || "").toLowerCase().includes(search.toLowerCase()),
+  );
+
+  return (
+    <div className="max-w-6xl mx-auto px-6 py-10">
+      <h1 className="text-3xl font-bold text-gray-800 mb-2">Explore Pitches</h1>
+      <p className="text-gray-500 mb-6">
+        Discover investment opportunities from product owners.
+      </p>
+
+      <input
+        type="text"
+        placeholder="Search by title or category..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-full border border-gray-300 rounded-lg px-4 py-2 mb-8 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+      />
+
+      {loading ? (
+        <p className="text-gray-400">Loading pitches...</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-gray-400">No pitches found.</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filtered.map((pitch) => (
+            <PitchCard key={pitch.id} pitch={pitch} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Home;
+</file>
+
+<file path="src/pages/Login.jsx">
+import { useState } from "react";
+import { supabase } from "../lib/supabaseClient";
+import { useNavigate, Link } from "react-router";
+
+function Login() {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function handleChange(e) {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    const { error: loginError } = await supabase.auth.signInWithPassword({
+      email: form.email,
+      password: form.password,
+    });
+
+    if (loginError) {
+      setError(loginError.message);
+      setLoading(false);
+      return;
+    }
+
+    navigate("/dashboard");
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="bg-white p-8 rounded-2xl shadow-md w-full max-w-md">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">Welcome Back</h2>
+        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm text-gray-600">Email</label>
+            <input
+              name="email"
+              type="email"
+              required
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600">Password</label>
+            <input
+              name="password"
+              type="password"
+              required
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {loading ? "Logging in..." : "Login"}
+          </button>
+        </form>
+        <p className="text-sm text-gray-500 mt-4 text-center">
+          No account?{" "}
+          <Link to="/register" className="text-indigo-600 hover:underline">
+            Register
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export default Login;
+</file>
+
+<file path="src/pages/PitchDetail.jsx">
+import { useEffect, useState } from "react";
+import { useParams } from "react-router";
+import { useSelector } from "react-redux";
+import { supabase } from "../lib/supabaseClient";
+
+function PitchDetail() {
+  const { id } = useParams();
+  const { user, profile } = useSelector((state) => state.auth);
+  const [pitch, setPitch] = useState(null);
+  const [owner, setOwner] = useState(null);
+  const [interested, setInterested] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPitch = async () => {
+    const { data } = await supabase
+      .from("pitches")
+      .select("*")
+      .eq("id", id)
+      .single();
+    setPitch(data);
+
+    if (data) {
+      const { data: ownerData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", data.owner_id)
+        .single();
+      setOwner(ownerData);
+    }
+
+    if (user) {
+      const { data: interestData } = await supabase
+        .from("interests")
+        .select("id")
+        .eq("investor_id", user.id)
+        .eq("pitch_id", id)
+        .single();
+      setInterested(!!interestData);
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchPitch();
+  }, [id]);
+
+  const toggleInterest = async () => {
+    if (!user) return alert("Please login to express interest.");
+
+    if (interested) {
+      await supabase
+        .from("interests")
+        .delete()
+        .eq("investor_id", user.id)
+        .eq("pitch_id", id);
+      setInterested(false);
+    } else {
+      await supabase
+        .from("interests")
+        .insert({ investor_id: user.id, pitch_id: id });
+      setInterested(true);
+    }
+  };
+
+  if (loading)
+    return <p className="text-center mt-20 text-gray-400">Loading...</p>;
+  if (!pitch)
+    return <p className="text-center mt-20 text-gray-400">Pitch not found.</p>;
+
+  return (
+    <div className="max-w-3xl mx-auto px-6 py-10">
+      <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">
+        {pitch.category || "General"}
+      </span>
+      <h1 className="text-3xl font-bold text-gray-800 mt-3">{pitch.title}</h1>
+      <p className="text-gray-500 mt-4 leading-relaxed">{pitch.description}</p>
+
+      <div className="mt-6 p-4 bg-gray-50 rounded-xl">
+        <p className="text-sm text-gray-500">Funding Goal</p>
+        <p className="text-2xl font-bold text-indigo-600">
+          ${Number(pitch.funding_goal).toLocaleString()}
+        </p>
+      </div>
+
+      {pitch.video_url && (
+        <div className="mt-6">
+          <a
+            href={pitch.video_url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-indigo-600 underline text-sm"
+          >
+            ▶ Watch Pitch Video
+          </a>
+        </div>
+      )}
+
+      {owner && (
+        <div className="mt-8 p-4 border border-gray-200 rounded-xl">
+          <p className="text-sm text-gray-500">Posted by</p>
+          <p className="font-semibold text-gray-800">{owner.full_name}</p>
+        </div>
+      )}
+
+      {profile?.role === "investor" && (
+        <button
+          onClick={toggleInterest}
+          className={`mt-6 px-6 py-3 rounded-lg font-semibold transition ${
+            interested
+              ? "bg-red-100 text-red-600 hover:bg-red-200"
+              : "bg-indigo-600 text-white hover:bg-indigo-700"
+          }`}
+        >
+          {interested ? "✓ Remove Interest" : "⭐ Express Interest"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default PitchDetail;
+</file>
+
+<file path="src/pages/Profile.jsx">
+import { useSelector } from "react-redux";
+
+function Profile() {
+  const { user, profile } = useSelector((state) => state.auth);
+
+  return (
+    <div className="max-w-2xl mx-auto px-6 py-10">
+      <h1 className="text-3xl font-bold text-gray-800 mb-6">My Profile</h1>
+      <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm space-y-4">
+        <div>
+          <p className="text-sm text-gray-500">Full Name</p>
+          <p className="text-gray-800 font-medium">
+            {profile?.full_name || "—"}
+          </p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">Email</p>
+          <p className="text-gray-800 font-medium">{user?.email}</p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">Role</p>
+          <span className="inline-block bg-indigo-100 text-indigo-700 text-sm px-3 py-1 rounded-full capitalize">
+            {profile?.role}
+          </span>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">Bio</p>
+          <p className="text-gray-800">{profile?.bio || "No bio added yet."}</p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">Member Since</p>
+          <p className="text-gray-800">
+            {new Date(profile?.created_at).toLocaleDateString()}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default Profile;
+</file>
+
+<file path="src/pages/Register.jsx">
+import { useState } from "react";
+import { supabase } from "../lib/supabaseClient";
+import { useNavigate, Link } from "react-router";
+
+function Register() {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({
+    full_name: "",
+    email: "",
+    password: "",
+    role: "investor",
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function handleChange(e) {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    // 1. Sign up with Supabase Auth
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+    });
+
+    if (signUpError) {
+      setError(signUpError.message);
+      setLoading(false);
+      return;
+    }
+
+    // 2. Insert profile into profiles table
+    const { error: profileError } = await supabase.from("profiles").insert({
+      id: data.user.id,
+      full_name: form.full_name,
+      role: form.role,
+    });
+
+    if (profileError) {
+      setError(profileError.message);
+      setLoading(false);
+      return;
+    }
+
+    navigate("/dashboard");
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="bg-white p-8 rounded-2xl shadow-md w-full max-w-md">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">
+          Create Account
+        </h2>
+        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm text-gray-600">Full Name</label>
+            <input
+              name="full_name"
+              type="text"
+              required
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600">Email</label>
+            <input
+              name="email"
+              type="email"
+              required
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600">Password</label>
+            <input
+              name="password"
+              type="password"
+              required
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600">I am a...</label>
+            <select
+              name="role"
+              onChange={handleChange}
+              value={form.role}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            >
+              <option value="investor">Investor</option>
+              <option value="owner">Product Owner</option>
+            </select>
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {loading ? "Creating account..." : "Register"}
+          </button>
+        </form>
+        <p className="text-sm text-gray-500 mt-4 text-center">
+          Already have an account?{" "}
+          <Link to="/login" className="text-indigo-600 hover:underline">
+            Login
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export default Register;
+</file>
+
+<file path="src/store/slices/authSlice.js">
+import { createSlice } from "@reduxjs/toolkit";
+
+const initialState = {
+  user: null,
+  profile: null,
+  loading: true,
+};
+
+const authSlice = createSlice({
+  name: "auth",
+  initialState,
+  reducers: {
+    setUser(state, action) {
+      state.user = action.payload;
+      state.loading = false;
+    },
+    setProfile(state, action) {
+      state.profile = action.payload;
+    },
+    clearAuth(state) {
+      state.user = null;
+      state.profile = null;
+      state.loading = false;
+    },
+    setLoading(state, action) {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const { setUser, setProfile, clearAuth, setLoading } = authSlice.actions;
+export default authSlice.reducer;
+</file>
+
+<file path="src/store/slices/pitchSlice.js">
+import { createSlice } from "@reduxjs/toolkit";
+
+const initialState = {
+  pitches: [],
+  loading: false,
+  error: null,
+};
+
+const pitchSlice = createSlice({
+  name: "pitch",
+  initialState,
+  reducers: {
+    setPitches(state, action) {
+      state.pitches = action.payload;
+    },
+    addPitch(state, action) {
+      state.pitches.unshift(action.payload);
+    },
+    removePitch(state, action) {
+      state.pitches = state.pitches.filter((p) => p.id !== action.payload);
+    },
+    setPitchLoading(state, action) {
+      state.loading = action.payload;
+    },
+    setPitchError(state, action) {
+      state.error = action.payload;
+    },
+  },
+});
+
+export const {
+  setPitches,
+  addPitch,
+  removePitch,
+  setPitchLoading,
+  setPitchError,
+} = pitchSlice.actions;
+export default pitchSlice.reducer;
+</file>
+
+<file path="src/store/store.js">
+import { configureStore } from "@reduxjs/toolkit";
+import authReducer from "./slices/authSlice";
+import pitchReducer from "./slices/pitchSlice";
+
+export const store = configureStore({
+  reducer: {
+    auth: authReducer,
+    pitch: pitchReducer,
+  },
+});
+</file>
+
+<file path="vite.config.js">
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+});
+</file>
+
+</files>
