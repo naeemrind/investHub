@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useNavigate, Link } from "react-router";
-import { LogIn, Mail, Lock } from "lucide-react";
+import { LogIn, Mail, Lock, AlertCircle } from "lucide-react";
 
 function Login() {
   const navigate = useNavigate();
@@ -20,18 +20,50 @@ function Login() {
 
     const cleanEmail = form.email.trim();
 
-    const { error: loginError } = await supabase.auth.signInWithPassword({
-      email: cleanEmail,
-      password: form.password,
-    });
+    try {
+      // 1. Attempt Auth Sign-In
+      const { data, error: loginError } =
+        await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: form.password,
+        });
 
-    if (loginError) {
-      setError(loginError.message);
+      if (loginError) throw loginError;
+
+      // 2. THE ZOMBIE CHECK: Verify that a profile actually exists for this user
+      if (data?.user) {
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", data.user.id)
+          .single();
+
+        if (profileError || !profileData) {
+          // If there's no profile, we must sign them out immediately
+          // so they aren't stuck in a broken "Logged In" state.
+          await supabase.auth.signOut();
+          throw new Error(
+            "Your account is missing a profile. Please register again or contact support.",
+          );
+        }
+      }
+
+      // Everything is valid
+      navigate("/dashboard");
+    } catch (err) {
+      // Map technical errors to user-friendly messages
+      let friendlyMessage = err.message;
+      if (err.message.includes("Invalid login credentials")) {
+        friendlyMessage = "Incorrect email or password. Please try again.";
+      } else if (err.message.includes("Email not confirmed")) {
+        friendlyMessage =
+          "Please confirm your email address before logging in.";
+      }
+
+      setError(friendlyMessage);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    navigate("/dashboard");
   }
 
   return (
@@ -50,8 +82,9 @@ function Login() {
         </div>
 
         {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4 text-center border border-red-100 font-medium">
-            {error}
+          <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4 flex items-start gap-2 border border-red-100 font-medium animate-in fade-in slide-in-from-top-2">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
@@ -65,7 +98,9 @@ function Login() {
               name="email"
               type="email"
               required
+              autoFocus
               placeholder="Email Address"
+              value={form.email}
               onChange={handleChange}
               className="w-full border border-gray-300 rounded-md pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50/50"
             />
@@ -86,6 +121,7 @@ function Login() {
                 type="password"
                 required
                 placeholder="Password"
+                value={form.password}
                 onChange={handleChange}
                 className="w-full border border-gray-300 rounded-md pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50/50"
               />
@@ -94,9 +130,16 @@ function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-md hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed mt-2 shadow-sm cursor-pointer"
+            className="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-md hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed mt-2 shadow-sm cursor-pointer flex justify-center items-center gap-2"
           >
-            {loading ? "Verifying..." : "Log In"}
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Verifying...
+              </>
+            ) : (
+              "Log In"
+            )}
           </button>
         </form>
 

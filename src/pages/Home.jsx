@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "../lib/supabaseClient";
 import PitchCard from "../components/PitchCard";
 import { Search, Compass, Filter } from "lucide-react";
@@ -6,9 +6,11 @@ import { Search, Compass, Filter } from "lucide-react";
 function Home() {
   const [pitches, setPitches] = useState([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [loading, setLoading] = useState(true);
 
+  // 1. Fetch data on component mount
   useEffect(() => {
     let isMounted = true;
 
@@ -35,23 +37,41 @@ function Home() {
     };
   }, []);
 
-  // Extract unique categories dynamically from the loaded pitches
-  const categories = [
-    "All",
-    ...new Set(pitches.map((p) => p.category).filter(Boolean)),
-  ];
+  // 2. Debounce the search input
+  // This prevents the filtering logic from running on every single keystroke.
+  // It waits for 300ms of inactivity before updating the search term used for filtering.
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
 
-  // Filter logic applies both Search Text and Category Selection
-  const filtered = pitches.filter((p) => {
-    const matchesSearch =
-      p.title.toLowerCase().includes(search.toLowerCase()) ||
-      (p.category || "").toLowerCase().includes(search.toLowerCase());
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [search]);
 
-    const matchesCategory =
-      selectedCategory === "All" || p.category === selectedCategory;
+  // 3. Memoize categories extraction
+  // Only recalculate categories when the pitches array actually changes
+  const categories = useMemo(() => {
+    return ["All", ...new Set(pitches.map((p) => p.category).filter(Boolean))];
+  }, [pitches]);
 
-    return matchesSearch && matchesCategory;
-  });
+  // 4. Memoize the filtered array
+  // Only recalculate when pitches, debouncedSearch, or selectedCategory change
+  const filtered = useMemo(() => {
+    const searchLower = debouncedSearch.toLowerCase();
+
+    return pitches.filter((p) => {
+      const matchesSearch =
+        p.title.toLowerCase().includes(searchLower) ||
+        (p.category || "").toLowerCase().includes(searchLower);
+
+      const matchesCategory =
+        selectedCategory === "All" || p.category === selectedCategory;
+
+      return matchesSearch && matchesCategory;
+    });
+  }, [pitches, debouncedSearch, selectedCategory]);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">

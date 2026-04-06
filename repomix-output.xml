@@ -1,4 +1,4 @@
-This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
 
 <file_summary>
 This section contains a summary of this file.
@@ -33,6 +33,7 @@ The content is organized as follows:
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
 - Only files matching these patterns are included: **/*.{js,jsx,json}
+- Files matching these patterns are excluded: package-lock.json
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -44,6 +45,7 @@ The content is organized as follows:
 eslint.config.js
 package.json
 src/App.jsx
+src/components/ConfirmationModal.jsx
 src/components/Navbar.jsx
 src/components/PitchCard.jsx
 src/components/ProtectedRoute.jsx
@@ -55,15 +57,251 @@ src/pages/Home.jsx
 src/pages/Login.jsx
 src/pages/PitchDetail.jsx
 src/pages/Profile.jsx
+src/pages/PublicProfile.jsx
 src/pages/Register.jsx
 src/store/slices/authSlice.js
-src/store/slices/pitchSlice.js
 src/store/store.js
 vite.config.js
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="src/components/ConfirmationModal.jsx">
+import React from "react";
+
+const ConfirmationModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  title = "Confirm Action",
+  message = "Are you sure you want to do this? This action cannot be undone.",
+  confirmText = "Delete",
+  cancelText = "Cancel",
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+        <div className="p-5 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+        </div>
+
+        <div className="p-5">
+          <p className="text-sm text-gray-600">{message}</p>
+        </div>
+
+        <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+          >
+            {cancelText}
+          </button>
+          <button
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ConfirmationModal;
+</file>
+
+<file path="src/pages/PublicProfile.jsx">
+import { useEffect, useState } from "react";
+import { useParams, Link } from "react-router";
+import { supabase } from "../lib/supabaseClient";
+import PitchCard from "../components/PitchCard";
+import {
+  UserCircle,
+  Calendar,
+  Briefcase,
+  Rocket,
+  Shield,
+  ArrowLeft,
+  UserX,
+} from "lucide-react";
+
+function PublicProfile() {
+  const { id } = useParams();
+  const [profile, setProfile] = useState(null);
+  const [portfolio, setPortfolio] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchProfileData = async () => {
+      setLoading(true);
+      try {
+        // 1. Fetch the user's profile
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", id)
+          .single();
+
+        if (profileError || !profileData) {
+          if (isMounted) {
+            setProfile(null);
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (isMounted) setProfile(profileData);
+
+        // 2. Fetch Portfolio based on role
+        if (profileData.role === "owner") {
+          const { data: pitchesData } = await supabase
+            .from("pitches")
+            .select("*, profiles(full_name)")
+            .eq("owner_id", id)
+            .order("created_at", { ascending: false });
+
+          if (isMounted) setPortfolio(pitchesData || []);
+        } else if (profileData.role === "investor") {
+          const { data: interestsData } = await supabase
+            .from("interests")
+            .select("*, pitches(*, profiles(full_name))")
+            .eq("investor_id", id)
+            .order("created_at", { ascending: false });
+
+          if (isMounted) {
+            // Extract the actual pitches from the interests data
+            // Added filter(Boolean) to remove any "ghost" pitches that were deleted
+            const investorPitches =
+              interestsData?.map((item) => item.pitches).filter(Boolean) || [];
+            setPortfolio(investorPitches);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching public profile:", err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchProfileData();
+
+    return () => (isMounted = false);
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto px-6 py-20 flex flex-col items-center justify-center text-center">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-gray-500 font-medium animate-pulse">
+          Loading profile...
+        </p>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="max-w-3xl mx-auto px-6 py-20 text-center">
+        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-12">
+          <UserX className="mx-auto text-gray-300 mb-4" size={64} />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Profile Not Found
+          </h2>
+          <p className="text-gray-500 mb-6">
+            We couldn't find the user profile you're looking for. It may have
+            been deleted or the link is incorrect.
+          </p>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-indigo-600 font-bold hover:text-indigo-800 transition cursor-pointer"
+          >
+            <ArrowLeft size={18} /> Return to Marketplace
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const isOwner = profile.role === "owner";
+
+  return (
+    <div className="max-w-6xl mx-auto px-6 py-10">
+      {/* Profile Header Card */}
+      <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm mb-10 flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
+        <UserCircle
+          className="text-gray-300 w-24 h-24 flex-shrink-0"
+          strokeWidth={1}
+        />
+
+        <div className="flex-grow">
+          <h1 className="text-3xl font-extrabold text-gray-900">
+            {profile.full_name || "Anonymous User"}
+          </h1>
+
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 mt-4">
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-bold border ${
+                isOwner
+                  ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+              }`}
+            >
+              {isOwner ? <Rocket size={16} /> : <Briefcase size={16} />}
+              {isOwner ? "Product Owner" : "Verified Investor"}
+            </span>
+
+            {profile.created_at && (
+              <span className="flex items-center gap-1.5 text-sm text-gray-500 font-medium">
+                <Calendar size={16} />
+                Joined{" "}
+                {new Date(profile.created_at).toLocaleDateString(undefined, {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Portfolio / History Section */}
+      <div className="mb-6 flex items-center gap-2 border-b border-gray-200 pb-4">
+        <Shield className="text-indigo-600" size={24} />
+        <h2 className="text-2xl font-bold text-gray-900">
+          {isOwner ? "Created Pitches" : "Investment History"}
+        </h2>
+      </div>
+
+      {portfolio.length === 0 ? (
+        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-10 text-center">
+          <p className="text-gray-500 font-medium">
+            {isOwner
+              ? "This user hasn't published any pitches yet."
+              : "This investor hasn't expressed interest in any pitches yet."}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {portfolio.map((pitch) => (
+            <PitchCard key={pitch.id} pitch={pitch} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default PublicProfile;
+</file>
 
 <file path="eslint.config.js">
 import js from '@eslint/js'
@@ -113,6 +351,7 @@ export default defineConfig([
     "@reduxjs/toolkit": "^2.11.2",
     "@supabase/supabase-js": "^2.100.1",
     "@tailwindcss/vite": "^4.2.2",
+    "lucide-react": "^1.7.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-redux": "^9.2.0",
@@ -150,20 +389,28 @@ import Dashboard from "./pages/Dashboard";
 import CreatePitch from "./pages/CreatePitch";
 import PitchDetail from "./pages/PitchDetail";
 import Profile from "./pages/Profile";
+import PublicProfile from "./pages/PublicProfile";
 
 function App() {
   const dispatch = useDispatch();
 
   const fetchProfile = async (userId) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-    if (data) dispatch(setProfile(data));
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (error) throw error;
+      if (data) dispatch(setProfile(data));
+    } catch (err) {
+      console.error("Error fetching profile:", err.message);
+    }
   };
 
   useEffect(() => {
+    // 1. Initial Session Check
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         dispatch(setUser(session.user));
@@ -173,6 +420,7 @@ function App() {
       }
     });
 
+    // 2. Listen for Auth Changes (Login/Logout/Token Refresh)
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         if (session?.user) {
@@ -185,22 +433,32 @@ function App() {
     );
 
     return () => listener.subscription.unsubscribe();
-  }, []);
+  }, [dispatch]);
 
   return (
     <BrowserRouter>
       <Navbar />
       <Routes>
+        {/* PUBLIC ROUTES */}
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/pitch/:id" element={<PitchDetail />} />
+        <Route path="/profile/:id" element={<PublicProfile />} />
+
+        {/* AUTHENTICATED ROUTES (Any Role) */}
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/create-pitch" element={<CreatePitch />} />
           <Route path="/profile" element={<Profile />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" />} />
+
+        {/* OWNER ONLY ROUTES */}
+        <Route element={<ProtectedRoute allowedRoles={["owner"]} />}>
+          <Route path="/create-pitch" element={<CreatePitch />} />
+        </Route>
+
+        {/* FALLBACK */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
@@ -213,6 +471,16 @@ export default App;
 import { Link, useNavigate } from "react-router";
 import { useSelector } from "react-redux";
 import { supabase } from "../lib/supabaseClient";
+import {
+  Rocket,
+  Compass,
+  LayoutDashboard,
+  Plus,
+  User,
+  LogOut,
+  LogIn,
+  UserPlus,
+} from "lucide-react";
 
 function Navbar() {
   const { user, profile } = useSelector((state) => state.auth);
@@ -225,48 +493,68 @@ function Navbar() {
 
   return (
     <nav className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-      <Link to="/" className="text-xl font-bold text-indigo-600">
+      <Link
+        to="/"
+        className="flex items-center gap-2 text-xl font-bold text-indigo-600 cursor-pointer"
+      >
+        <Rocket size={24} />
         InvestHub
       </Link>
-      <div className="flex items-center gap-4">
-        <Link to="/" className="text-gray-600 hover:text-indigo-600">
+      <div className="flex items-center gap-6">
+        <Link
+          to="/"
+          className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-indigo-600 transition cursor-pointer"
+        >
+          <Compass size={18} />
           Pitches
         </Link>
         {user ? (
           <>
             <Link
               to="/dashboard"
-              className="text-gray-600 hover:text-indigo-600"
+              className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-indigo-600 transition cursor-pointer"
             >
+              <LayoutDashboard size={18} />
               Dashboard
             </Link>
             {profile?.role === "owner" && (
               <Link
                 to="/create-pitch"
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                className="flex items-center gap-1.5 bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-md hover:bg-indigo-700 transition shadow-sm cursor-pointer"
               >
-                + New Pitch
+                <Plus size={18} />
+                New Pitch
               </Link>
             )}
-            <Link to="/profile" className="text-gray-600 hover:text-indigo-600">
+            <Link
+              to="/profile"
+              className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-indigo-600 transition cursor-pointer"
+            >
+              <User size={18} />
               Profile
             </Link>
             <button
               onClick={handleLogout}
-              className="text-red-500 hover:text-red-700"
+              className="flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-700 transition cursor-pointer"
             >
+              <LogOut size={18} />
               Logout
             </button>
           </>
         ) : (
           <>
-            <Link to="/login" className="text-gray-600 hover:text-indigo-600">
+            <Link
+              to="/login"
+              className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-indigo-600 transition cursor-pointer"
+            >
+              <LogIn size={18} />
               Login
             </Link>
             <Link
               to="/register"
-              className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+              className="flex items-center gap-1.5 bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-md hover:bg-indigo-700 transition shadow-sm cursor-pointer"
             >
+              <UserPlus size={18} />
               Register
             </Link>
           </>
@@ -281,29 +569,125 @@ export default Navbar;
 
 <file path="src/components/PitchCard.jsx">
 import { Link } from "react-router";
+import {
+  Tag,
+  ArrowRight,
+  Trash2,
+  Users,
+  User,
+  Pencil,
+  PlayCircle,
+} from "lucide-react";
 
-function PitchCard({ pitch }) {
+// Helper function to extract YouTube Video ID
+function getYouTubeId(url) {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return match && match[2].length === 11 ? match[2] : null;
+}
+
+function PitchCard({ pitch, interestedCount, onDelete, onEdit }) {
+  const youtubeId = getYouTubeId(pitch.video_url);
+  const thumbnailUrl = youtubeId
+    ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`
+    : null;
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition">
-      <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">
-        {pitch.category || "General"}
-      </span>
-      <h3 className="text-lg font-semibold text-gray-800 mt-3">
-        {pitch.title}
-      </h3>
-      <p className="text-gray-500 text-sm mt-1 line-clamp-2">
-        {pitch.description}
-      </p>
-      <div className="flex items-center justify-between mt-4">
-        <span className="text-indigo-600 font-bold">
-          ${Number(pitch.funding_goal).toLocaleString()}
-        </span>
-        <Link
-          to={`/pitch/${pitch.id}`}
-          className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700"
-        >
-          View Pitch
-        </Link>
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition flex flex-col h-full relative group">
+      {/* Thumbnail Header */}
+      <div className="relative h-48 bg-indigo-50 border-b border-gray-100 flex-shrink-0">
+        {thumbnailUrl ? (
+          <>
+            <img
+              src={thumbnailUrl}
+              alt={pitch.title}
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <PlayCircle className="text-white w-12 h-12 opacity-80" />
+            </div>
+          </>
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
+            <span className="text-indigo-300 font-medium tracking-widest uppercase text-sm">
+              No Video
+            </span>
+          </div>
+        )}
+
+        {/* Absolute Badges over image */}
+        <div className="absolute top-3 left-3 flex gap-2">
+          <span className="flex items-center gap-1.5 text-xs font-semibold bg-white/90 backdrop-blur-sm text-indigo-700 px-2.5 py-1 rounded-md shadow-sm">
+            <Tag size={12} />
+            {pitch.category || "General"}
+          </span>
+          {interestedCount !== undefined && (
+            <span className="flex items-center gap-1 text-xs font-bold bg-white/90 backdrop-blur-sm text-emerald-700 px-2 py-1 rounded-md shadow-sm">
+              <Users size={12} />
+              {interestedCount}
+            </span>
+          )}
+        </div>
+
+        {/* Action Buttons (Edit / Delete) */}
+        <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onEdit && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                onEdit(pitch);
+              }}
+              className="bg-white/90 backdrop-blur-sm text-blue-600 hover:text-blue-800 hover:bg-white p-1.5 rounded-md shadow-sm transition cursor-pointer"
+              title="Edit Pitch"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                onDelete(pitch.id);
+              }}
+              className="bg-white/90 backdrop-blur-sm text-red-500 hover:text-red-700 hover:bg-white p-1.5 rounded-md shadow-sm transition cursor-pointer"
+              title="Delete Pitch"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Card Body */}
+      <div className="p-5 flex flex-col flex-grow">
+        <h3 className="text-lg font-bold text-gray-900 leading-tight line-clamp-1">
+          {pitch.title}
+        </h3>
+
+        {/* Owner Name Badge */}
+        {pitch.profiles && (
+          <div className="flex items-center gap-1.5 mt-2 text-xs font-medium text-gray-500">
+            <User size={14} className="text-gray-400" />
+            By {pitch.profiles.full_name}
+          </div>
+        )}
+
+        <p className="text-gray-500 text-sm mt-3 line-clamp-2 flex-grow">
+          {pitch.description}
+        </p>
+
+        <div className="flex items-center justify-between mt-5 pt-4 border-t border-gray-100">
+          <span className="text-indigo-600 font-extrabold text-lg tracking-tight">
+            ${Number(pitch.funding_goal).toLocaleString()}
+          </span>
+          <Link
+            to={`/pitch/${pitch.id}`}
+            className="flex items-center gap-1.5 text-sm font-medium bg-indigo-600 text-white px-3.5 py-2 rounded-md hover:bg-indigo-700 transition cursor-pointer"
+          >
+            Details <ArrowRight size={16} />
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -316,18 +700,38 @@ export default PitchCard;
 import { useSelector } from "react-redux";
 import { Navigate, Outlet } from "react-router";
 
-function ProtectedRoute() {
-  const { user, loading } = useSelector((state) => state.auth);
+/**
+ * ProtectedRoute handles both Authentication and Authorization.
+ * @param {Array} allowedRoles - An array of roles (e.g., ['owner', 'investor'])
+ *                               that are permitted to access the route.
+ */
+function ProtectedRoute({ allowedRoles }) {
+  const { user, profile, loading } = useSelector((state) => state.auth);
 
+  // 1. Handle the loading state to prevent flickering or premature redirection
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen text-gray-500">
-        Loading...
+      <div className="flex flex-col items-center justify-center h-screen text-gray-500 bg-gray-50">
+        <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="font-medium animate-pulse">Securing your session...</p>
       </div>
     );
   }
 
-  return user ? <Outlet /> : <Navigate to="/login" />;
+  // 2. Authentication Check: If no user is logged in, send to login
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // 3. Authorization Check: If allowedRoles is provided, verify the user's role
+  if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
+    // If the user is logged in but has the wrong role, send them to the dashboard
+    // We use replace to prevent the user from getting stuck in a back-button loop
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // 4. Access Granted
+  return <Outlet />;
 }
 
 export default ProtectedRoute;
@@ -361,10 +765,25 @@ import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router";
+import {
+  UploadCloud,
+  FileText,
+  Tag,
+  DollarSign,
+  ArrowRight,
+  ArrowLeft,
+  CheckCircle,
+  Video,
+} from "lucide-react";
 
 function CreatePitch() {
   const { user } = useSelector((state) => state.auth);
   const navigate = useNavigate();
+
+  // Wizard State
+  const [step, setStep] = useState(1);
+  const totalSteps = 4;
+
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -375,93 +794,338 @@ function CreatePitch() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Constants for constraints
+  const LIMITS = {
+    title: 100,
+    description: 5000,
+  };
+
   function handleChange(e) {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    // Prevent typing more than the limit (extra safety)
+    if (name === "title" && value.length > LIMITS.title) return;
+    if (name === "description" && value.length > LIMITS.description) return;
+
+    setForm({ ...form, [name]: value });
   }
+
+  function nextStep() {
+    if (step < totalSteps) setStep((prev) => prev + 1);
+  }
+
+  function prevStep() {
+    if (step > 1) setStep((prev) => prev - 1);
+  }
+
+  // Validation logic
+  const isStep1Valid =
+    form.title.trim().length >= 3 && form.title.trim().length <= LIMITS.title;
+  const isStep2Valid =
+    form.funding_goal !== "" && Number(form.funding_goal) > 0;
+  const isStep3Valid =
+    form.description.trim().length >= 10 &&
+    form.description.trim().length <= LIMITS.description;
+
+  // Simple YouTube URL validator
+  const isValidYouTubeUrl = (url) => {
+    if (!url) return true; // Optional field
+    const regExp =
+      /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    return regExp.test(url);
+  };
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
-    const { error: insertError } = await supabase.from("pitches").insert({
-      ...form,
-      owner_id: user.id,
-      funding_goal: Number(form.funding_goal),
-    });
-
-    if (insertError) {
-      setError(insertError.message);
-      setLoading(false);
+    if (!isValidYouTubeUrl(form.video_url)) {
+      setError("Please provide a valid YouTube URL.");
       return;
     }
 
-    navigate("/dashboard");
+    setLoading(true);
+
+    try {
+      const { error: insertError } = await supabase.from("pitches").insert({
+        title: form.title.trim(),
+        description: form.description.trim(),
+        category: form.category.trim() || "General",
+        video_url: form.video_url.trim(),
+        owner_id: user.id,
+        funding_goal: Number(form.funding_goal),
+      });
+
+      if (insertError) throw insertError;
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-10">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6">
-        Create a New Pitch
-      </h1>
-      {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+      <div className="flex items-center gap-3 mb-8">
+        <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shadow-sm">
+          <UploadCloud size={28} />
+        </div>
+        <div>
+          <h1 className="text-3xl font-extrabold text-gray-900 leading-tight">
+            Create a New Pitch
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Attract investors with a compelling presentation.
+          </p>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="mb-8 relative">
+        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-200">
+          <div
+            style={{ width: `${(step / totalSteps) * 100}%` }}
+            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-600 transition-all duration-500"
+          ></div>
+        </div>
+        <div className="flex justify-between text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <span className={step >= 1 ? "text-indigo-600" : ""}>Basics</span>
+          <span className={step >= 2 ? "text-indigo-600" : ""}>Financials</span>
+          <span className={step >= 3 ? "text-indigo-600" : ""}>The Story</span>
+          <span className={step >= 4 ? "text-indigo-600" : ""}>Review</span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-6 border border-red-100 font-medium flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+          <CheckCircle size={16} className="text-red-500" /> {error}
+        </div>
+      )}
+
       <form
         onSubmit={handleSubmit}
-        className="space-y-5 bg-white p-8 rounded-2xl shadow-md"
+        className="bg-white p-6 sm:p-8 rounded-xl shadow-sm border border-gray-200 min-h-[400px] flex flex-col"
       >
-        <div>
-          <label className="text-sm text-gray-600">Pitch Title *</label>
-          <input
-            name="title"
-            required
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
+        <div className="flex-grow">
+          {/* STEP 1: BASICS */}
+          {step === 1 && (
+            <div className="space-y-5 animate-in slide-in-from-right-4 fade-in duration-300">
+              <h2 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">
+                Step 1: The Basics
+              </h2>
+              <div>
+                <label className="flex items-center justify-between text-sm font-semibold text-gray-700 mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <FileText size={16} /> Pitch Title{" "}
+                    <span className="text-red-500">*</span>
+                  </span>
+                  <span className="text-xs text-gray-400 font-normal">
+                    {form.title.length}/{LIMITS.title}
+                  </span>
+                </label>
+                <input
+                  name="title"
+                  value={form.title}
+                  onChange={handleChange}
+                  placeholder="E.g., NextGen Eco-Friendly Packaging"
+                  maxLength={LIMITS.title}
+                  className="w-full border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
+                  <Tag size={16} /> Category
+                </label>
+                <input
+                  name="category"
+                  value={form.category}
+                  onChange={handleChange}
+                  placeholder="e.g. Tech, Health, Finance"
+                  className="w-full border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: FINANCIALS & MEDIA */}
+          {step === 2 && (
+            <div className="space-y-5 animate-in slide-in-from-right-4 fade-in duration-300">
+              <h2 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">
+                Step 2: Financials & Media
+              </h2>
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
+                  <DollarSign size={16} /> Funding Goal ($){" "}
+                  <span className="text-red-500">*</span>
+                </label>
+                <input
+                  name="funding_goal"
+                  type="number"
+                  min="1"
+                  value={form.funding_goal}
+                  onChange={handleChange}
+                  placeholder="50000"
+                  className="w-full border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
+                  <Video size={16} /> YouTube Video URL{" "}
+                  <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  name="video_url"
+                  type="url"
+                  value={form.video_url}
+                  onChange={handleChange}
+                  placeholder="https://youtube.com/watch?v=..."
+                  className={`w-full border rounded-md px-4 py-3 focus:outline-none focus:ring-2 transition ${
+                    form.video_url && !isValidYouTubeUrl(form.video_url)
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-indigo-500"
+                  }`}
+                />
+                {form.video_url && !isValidYouTubeUrl(form.video_url) && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Please enter a valid YouTube URL.
+                  </p>
+                )}
+                <p className="text-xs text-gray-500 mt-2">
+                  Adding a YouTube video creates a beautiful thumbnail and
+                  embedded player for investors.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: THE STORY */}
+          {step === 3 && (
+            <div className="space-y-5 animate-in slide-in-from-right-4 fade-in duration-300">
+              <h2 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">
+                Step 3: The Story
+              </h2>
+              <div>
+                <label className="flex items-center justify-between text-sm font-semibold text-gray-700 mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <FileText size={16} /> Detailed Description{" "}
+                    <span className="text-red-500">*</span>
+                  </span>
+                  <span className="text-xs text-gray-400 font-normal">
+                    {form.description.length}/{LIMITS.description}
+                  </span>
+                </label>
+                <textarea
+                  name="description"
+                  rows={6}
+                  value={form.description}
+                  onChange={handleChange}
+                  placeholder="Describe your product, the problem it solves, your target market, and why investors should care..."
+                  maxLength={LIMITS.description}
+                  className="w-full border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition resize-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: REVIEW */}
+          {step === 4 && (
+            <div className="space-y-5 animate-in slide-in-from-right-4 fade-in duration-300">
+              <h2 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">
+                Step 4: Review & Publish
+              </h2>
+              <div className="bg-gray-50 p-5 rounded-lg border border-gray-200 space-y-4">
+                <div>
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Title
+                  </span>
+                  <p className="text-lg font-bold text-gray-900 break-words">
+                    {form.title || "—"}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Category
+                    </span>
+                    <p className="text-gray-900 font-medium break-words">
+                      {form.category || "General"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Funding Goal
+                    </span>
+                    <p className="text-green-600 font-bold">
+                      ${Number(form.funding_goal).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Video URL
+                  </span>
+                  <p className="text-indigo-600 text-sm truncate">
+                    {form.video_url || "No video attached"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Description Snippet
+                  </span>
+                  <p className="text-gray-600 text-sm line-clamp-3 mt-1 bg-white p-2 border border-gray-100 rounded break-words">
+                    {form.description}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-        <div>
-          <label className="text-sm text-gray-600">Description</label>
-          <textarea
-            name="description"
-            rows={4}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
+
+        {/* Wizard Navigation */}
+        <div className="flex justify-between items-center mt-8 pt-4 border-t border-gray-100">
+          <button
+            type="button"
+            onClick={prevStep}
+            disabled={step === 1 || loading}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition ${
+              step === 1 || loading
+                ? "text-gray-300 cursor-not-allowed"
+                : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            <ArrowLeft size={18} /> Back
+          </button>
+
+          {step < totalSteps ? (
+            <button
+              type="button"
+              onClick={nextStep}
+              disabled={
+                (step === 1 && !isStep1Valid) ||
+                (step === 2 && !isStep2Valid) ||
+                (step === 3 && !isStep3Valid) ||
+                loading
+              }
+              className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-md font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              Next Step <ArrowRight size={18} />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex items-center gap-2 bg-green-600 text-white px-6 py-2.5 rounded-md font-bold hover:bg-green-700 focus:ring-4 focus:ring-green-200 transition disabled:opacity-50 cursor-pointer shadow-sm"
+            >
+              {loading ? (
+                "Publishing..."
+              ) : (
+                <>
+                  <CheckCircle size={18} /> Publish Pitch
+                </>
+              )}
+            </button>
+          )}
         </div>
-        <div>
-          <label className="text-sm text-gray-600">Funding Goal ($)</label>
-          <input
-            name="funding_goal"
-            type="number"
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
-        </div>
-        <div>
-          <label className="text-sm text-gray-600">Category</label>
-          <input
-            name="category"
-            onChange={handleChange}
-            placeholder="e.g. Tech, Health, Finance"
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
-        </div>
-        <div>
-          <label className="text-sm text-gray-600">Video URL (optional)</label>
-          <input
-            name="video_url"
-            type="url"
-            onChange={handleChange}
-            placeholder="https://youtube.com/..."
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {loading ? "Submitting..." : "Create Pitch"}
-        </button>
       </form>
     </div>
   );
@@ -475,82 +1139,437 @@ import { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
 import { supabase } from "../lib/supabaseClient";
 import PitchCard from "../components/PitchCard";
+import ConfirmationModal from "../components/ConfirmationModal";
 import { Link } from "react-router";
+import {
+  Briefcase,
+  Rocket,
+  Plus,
+  FolderOpen,
+  DollarSign,
+  Users,
+  Star,
+  Activity,
+  X,
+  Save,
+  AlertCircle,
+  CheckCircle2,
+} from "lucide-react";
 
 function Dashboard() {
   const { user, profile } = useSelector((state) => state.auth);
   const [myPitches, setMyPitches] = useState([]);
   const [myInterests, setMyInterests] = useState([]);
+  const [pitchInterestsData, setPitchInterestsData] = useState({});
   const [loading, setLoading] = useState(true);
 
-  const fetchMyPitches = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("pitches")
-      .select("*")
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false });
-    setMyPitches(data || []);
-    setLoading(false);
-  };
+  // Notification State (Replacing alert())
+  const [notification, setNotification] = useState(null); // { type: 'error' | 'success', message: string }
 
-  const fetchMyInterests = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("interests")
-      .select("*, pitches(*)")
-      .eq("investor_id", user.id);
-    setMyInterests(data || []);
-    setLoading(false);
+  // Delete Modal State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [pitchToDelete, setPitchToDelete] = useState(null);
+
+  // Edit Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [pitchToEdit, setPitchToEdit] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Helper to show notifications
+  const notify = (type, message) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000);
   };
 
   useEffect(() => {
-    if (profile?.role === "owner") fetchMyPitches();
-    if (profile?.role === "investor") fetchMyInterests();
-  }, [profile]);
+    let isMounted = true;
 
-  const deletePitch = async (id) => {
-    if (!confirm("Delete this pitch?")) return;
-    await supabase.from("pitches").delete().eq("id", id);
-    setMyPitches((prev) => prev.filter((p) => p.id !== id));
+    const fetchOwnerDashboard = async () => {
+      setLoading(true);
+      try {
+        const { data: pitchesData } = await supabase
+          .from("pitches")
+          .select("*")
+          .eq("owner_id", user?.id)
+          .order("created_at", { ascending: false });
+
+        if (!isMounted) return;
+
+        const pitches = pitchesData || [];
+        setMyPitches(pitches);
+
+        if (pitches.length > 0) {
+          const pitchIds = pitches.map((p) => p.id);
+          const { data: interestData } = await supabase
+            .from("interests")
+            .select("*")
+            .in("pitch_id", pitchIds);
+
+          if (isMounted && interestData) {
+            const interestCounts = {};
+            interestData.forEach((interest) => {
+              interestCounts[interest.pitch_id] =
+                (interestCounts[interest.pitch_id] || 0) + 1;
+            });
+            setPitchInterestsData(interestCounts);
+          }
+        }
+      } catch (err) {
+        notify("error", "Failed to load your pitches.", err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    const fetchInvestorDashboard = async () => {
+      setLoading(true);
+      try {
+        const { data } = await supabase
+          .from("interests")
+          .select("*, pitches(*)")
+          .eq("investor_id", user?.id)
+          .order("created_at", { ascending: false });
+
+        if (isMounted) {
+          setMyInterests(data || []);
+        }
+      } catch (err) {
+        notify("error", "Failed to load your interested pitches.", err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    if (profile?.role === "owner") fetchOwnerDashboard();
+    if (profile?.role === "investor") fetchInvestorDashboard();
+
+    return () => (isMounted = false);
+  }, [profile, user]);
+
+  // Handle Deletion
+  const triggerDelete = (id) => {
+    setPitchToDelete(id);
+    setIsDeleteModalOpen(true);
   };
 
-  return (
-    <div className="max-w-5xl mx-auto px-6 py-10">
-      <h1 className="text-3xl font-bold text-gray-800 mb-2">My Dashboard</h1>
-      <p className="text-gray-500 mb-8">
-        Hello, <strong>{profile?.full_name}</strong> — you are logged in as a{" "}
-        <span className="text-indigo-600 font-semibold">{profile?.role}</span>
-      </p>
+  const confirmDelete = async () => {
+    if (!pitchToDelete) return;
+    const { error } = await supabase
+      .from("pitches")
+      .delete()
+      .eq("id", pitchToDelete);
 
+    if (error) {
+      notify("error", "Could not delete pitch: " + error.message);
+      return;
+    }
+
+    setMyPitches((prev) => prev.filter((p) => p.id !== pitchToDelete));
+    setIsDeleteModalOpen(false);
+    setPitchToDelete(null);
+    notify("success", "Pitch successfully removed.");
+  };
+
+  // Handle Editing
+  const triggerEdit = (pitch) => {
+    setPitchToEdit(pitch);
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditChange = (e) => {
+    setPitchToEdit({ ...pitchToEdit, [e.target.name]: e.target.value });
+  };
+
+  const submitEdit = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+
+    const { data, error } = await supabase
+      .from("pitches")
+      .update({
+        title: pitchToEdit.title.trim(),
+        description: pitchToEdit.description.trim(),
+        funding_goal: Number(pitchToEdit.funding_goal),
+        category: pitchToEdit.category.trim() || "General",
+        video_url: pitchToEdit.video_url.trim(),
+      })
+      .eq("id", pitchToEdit.id)
+      .select()
+      .single();
+
+    setIsSaving(false);
+
+    if (error) {
+      notify("error", "Error updating pitch: " + error.message);
+      return;
+    }
+
+    setMyPitches((prev) =>
+      prev.map((p) => (p.id === data.id ? { ...p, ...data } : p)),
+    );
+    setIsEditModalOpen(false);
+    setPitchToEdit(null);
+    notify("success", "Pitch updated successfully!");
+  };
+
+  const totalOwnerFundingGoal = myPitches.reduce(
+    (acc, p) => acc + Number(p.funding_goal || 0),
+    0,
+  );
+  const totalOwnerInterests = Object.values(pitchInterestsData).reduce(
+    (acc, curr) => acc + curr,
+    0,
+  );
+  const totalInvestorPipeline = myInterests.reduce(
+    (acc, item) => acc + Number(item.pitches?.funding_goal || 0),
+    0,
+  );
+
+  const getInterestHeat = (count) => {
+    if (count === 0)
+      return { label: "Cold", color: "bg-gray-100 text-gray-600" };
+    if (count < 5)
+      return { label: "Warm", color: "bg-yellow-100 text-yellow-700" };
+    return { label: "Hot", color: "bg-red-100 text-red-700" };
+  };
+  const heatIndicator = getInterestHeat(totalOwnerInterests);
+
+  return (
+    <div className="max-w-6xl mx-auto px-6 py-10 relative">
+      {/* Notification Banner */}
+      {notification && (
+        <div
+          className={`fixed top-20 right-6 z-[100] flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border animate-in slide-in-from-right-8 duration-300 ${
+            notification.type === "success"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}
+        >
+          {notification.type === "success" ? (
+            <CheckCircle2 size={18} />
+          ) : (
+            <AlertCircle size={18} />
+          )}
+          <span className="text-sm font-medium">{notification.message}</span>
+          <button
+            onClick={() => setNotification(null)}
+            className="ml-2 hover:opacity-70"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold text-gray-900 flex items-center gap-3">
+            {profile?.role === "owner" ? (
+              <Rocket className="text-indigo-600" />
+            ) : (
+              <Briefcase className="text-indigo-600" />
+            )}
+            My Dashboard
+          </h1>
+          <p className="text-gray-500 mt-2">
+            Welcome back,{" "}
+            <span className="font-semibold text-gray-700">
+              {profile?.full_name || "User"}
+            </span>
+            . Logged in as{" "}
+            <span className="text-indigo-600 font-semibold capitalize">
+              {profile?.role || "Guest"}
+            </span>
+            .
+          </p>
+        </div>
+        {profile?.role === "owner" && (
+          <Link
+            to="/create-pitch"
+            className="bg-indigo-600 text-white px-5 py-2.5 rounded-md font-medium hover:bg-indigo-700 transition shadow-sm flex items-center gap-2 cursor-pointer"
+          >
+            <Plus size={18} /> New Pitch
+          </Link>
+        )}
+      </div>
+
+      {/* ----------------- OWNER VIEW ----------------- */}
       {profile?.role === "owner" && (
         <>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-700">My Pitches</h2>
-            <Link
-              to="/create-pitch"
-              className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm"
-            >
-              + New Pitch
-            </Link>
-          </div>
-          {loading ? (
-            <p className="text-gray-400">Loading...</p>
-          ) : myPitches.length === 0 ? (
-            <p className="text-gray-400">
-              You haven't created any pitches yet.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {myPitches.map((pitch) => (
-                <div key={pitch.id} className="relative">
-                  <PitchCard pitch={pitch} />
-                  <button
-                    onClick={() => deletePitch(pitch.id)}
-                    className="absolute top-3 right-3 text-xs text-red-500 hover:text-red-700"
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Active Pitches
+                </p>
+                <p className="text-2xl font-extrabold text-gray-900">
+                  {myPitches.length}
+                </p>
+              </div>
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100">
+                <FolderOpen size={24} />
+              </div>
+            </div>
+            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Capital Seeking
+                </p>
+                <p className="text-2xl font-extrabold text-gray-900">
+                  ${totalOwnerFundingGoal.toLocaleString()}
+                </p>
+              </div>
+              <div className="p-3 bg-green-50 text-green-600 rounded-lg border border-green-100">
+                <DollarSign size={24} />
+              </div>
+            </div>
+            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm flex items-center justify-between relative overflow-hidden">
+              <div className="z-10">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-2">
+                  Investor Interests
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${heatIndicator.color}`}
                   >
-                    Delete
-                  </button>
+                    {heatIndicator.label}
+                  </span>
+                </p>
+                <p className="text-2xl font-extrabold text-gray-900">
+                  {totalOwnerInterests}
+                </p>
+              </div>
+              <div className="p-3 bg-orange-50 text-orange-600 rounded-lg border border-orange-100 z-10">
+                <Activity size={24} />
+              </div>
+              {totalOwnerInterests > 0 && (
+                <div
+                  className={`absolute -right-4 -bottom-4 w-24 h-24 rounded-full blur-2xl opacity-20 ${heatIndicator.color.split(" ")[0]}`}
+                ></div>
+              )}
+            </div>
+          </div>
+
+          <h2 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">
+            Manage My Pitches
+          </h2>
+
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-64 bg-gray-100 rounded-xl border border-gray-200"
+                ></div>
+              ))}
+            </div>
+          ) : myPitches.length === 0 ? (
+            <div className="bg-white border border-dashed border-gray-300 rounded-xl p-16 text-center">
+              <div className="w-20 h-20 bg-indigo-50 text-indigo-300 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Rocket size={40} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900">
+                Your portfolio is empty
+              </h3>
+              <p className="text-gray-500 mt-2 mb-8 max-w-xs mx-auto">
+                You haven't published any pitches yet. Start attracting
+                investors today!
+              </p>
+              <Link
+                to="/create-pitch"
+                className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-indigo-700 transition shadow-md inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Plus size={20} /> Create Your First Pitch
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {myPitches.map((pitch) => (
+                <PitchCard
+                  key={pitch.id}
+                  pitch={pitch}
+                  interestedCount={pitchInterestsData[pitch.id] || 0}
+                  onDelete={triggerDelete}
+                  onEdit={triggerEdit}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ----------------- INVESTOR VIEW ----------------- */}
+      {profile?.role === "investor" && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Expressed Interests
+                </p>
+                <p className="text-2xl font-extrabold text-gray-900">
+                  {myInterests.length}
+                </p>
+              </div>
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100">
+                <Star size={24} />
+              </div>
+            </div>
+            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Investment Pipeline
+                </p>
+                <p className="text-2xl font-extrabold text-gray-900">
+                  ${totalInvestorPipeline.toLocaleString()}
+                </p>
+              </div>
+              <div className="p-3 bg-green-50 text-green-600 rounded-lg border border-green-100">
+                <DollarSign size={24} />
+              </div>
+            </div>
+          </div>
+
+          <h2 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">
+            My Saved Opportunities
+          </h2>
+
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
+              {[1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-64 bg-gray-100 rounded-xl border border-gray-200"
+                ></div>
+              ))}
+            </div>
+          ) : myInterests.length === 0 ? (
+            <div className="bg-white border border-dashed border-gray-300 rounded-xl p-16 text-center">
+              <div className="w-20 h-20 bg-indigo-50 text-indigo-300 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Star size={40} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900">
+                No saved opportunities
+              </h3>
+              <p className="text-gray-500 mt-2 mb-8 max-w-xs mx-auto">
+                Your pipeline is currently empty. Explore the marketplace to
+                find exciting startups.
+              </p>
+              <Link
+                to="/"
+                className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-indigo-700 transition shadow-md inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Compass size={20} /> Explore Pitches
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {myInterests.map((item) => (
+                <div key={item.id}>
+                  {item.pitches ? (
+                    <PitchCard pitch={item.pitches} />
+                  ) : (
+                    <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 text-gray-400 text-center h-full flex items-center justify-center">
+                      Pitch no longer available
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -558,25 +1577,126 @@ function Dashboard() {
         </>
       )}
 
-      {profile?.role === "investor" && (
-        <>
-          <h2 className="text-xl font-semibold text-gray-700 mb-4">
-            Pitches I'm Interested In
-          </h2>
-          {loading ? (
-            <p className="text-gray-400">Loading...</p>
-          ) : myInterests.length === 0 ? (
-            <p className="text-gray-400">
-              You haven't expressed interest in any pitch yet.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {myInterests.map((item) => (
-                <PitchCard key={item.id} pitch={item.pitches} />
-              ))}
+      {/* Safe Deletion Modal */}
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Delete Pitch"
+        message="Are you sure you want to permanently delete this pitch? This action will remove it from all investors' feeds and cannot be undone."
+      />
+
+      {/* Edit Pitch Modal */}
+      {isEditModalOpen && pitchToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-8">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="text-lg font-bold text-gray-900">Edit Pitch</h3>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 transition"
+              >
+                <X size={20} />
+              </button>
             </div>
-          )}
-        </>
+
+            <form onSubmit={submitEdit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Title
+                </label>
+                <input
+                  required
+                  maxLength={100}
+                  name="title"
+                  value={pitchToEdit.title}
+                  onChange={handleEditChange}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  required
+                  maxLength={5000}
+                  name="description"
+                  rows={3}
+                  value={pitchToEdit.description}
+                  onChange={handleEditChange}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Funding Goal ($)
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    name="funding_goal"
+                    value={pitchToEdit.funding_goal}
+                    onChange={handleEditChange}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Category
+                  </label>
+                  <input
+                    name="category"
+                    value={pitchToEdit.category || ""}
+                    onChange={handleEditChange}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  YouTube Video URL
+                </label>
+                <input
+                  type="url"
+                  name="video_url"
+                  value={pitchToEdit.video_url || ""}
+                  onChange={handleEditChange}
+                  placeholder="https://youtube.com/..."
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition"
+                />
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3 border-t border-gray-100 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 flex items-center gap-2 transition disabled:opacity-50"
+                >
+                  {isSaving ? (
+                    "Saving..."
+                  ) : (
+                    <>
+                      <Save size={16} /> Save Changes
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -589,51 +1709,134 @@ export default Dashboard;
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import PitchCard from "../components/PitchCard";
+import { Search, Compass, Filter } from "lucide-react";
 
 function Home() {
   const [pitches, setPitches] = useState([]);
   const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
   const [loading, setLoading] = useState(true);
 
-  const fetchPitches = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("pitches")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (!error) setPitches(data);
-    setLoading(false);
-  };
-
   useEffect(() => {
+    let isMounted = true;
+
+    const fetchPitches = async () => {
+      setLoading(true);
+      // Fetches pitches AND the attached owner's full_name
+      const { data, error } = await supabase
+        .from("pitches")
+        .select("*, profiles(full_name)")
+        .order("created_at", { ascending: false });
+
+      if (isMounted) {
+        if (!error && data) {
+          setPitches(data);
+        }
+        setLoading(false);
+      }
+    };
+
     fetchPitches();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const filtered = pitches.filter(
-    (p) =>
+  // Extract unique categories dynamically from the loaded pitches
+  const categories = [
+    "All",
+    ...new Set(pitches.map((p) => p.category).filter(Boolean)),
+  ];
+
+  // Filter logic applies both Search Text and Category Selection
+  const filtered = pitches.filter((p) => {
+    const matchesSearch =
       p.title.toLowerCase().includes(search.toLowerCase()) ||
-      (p.category || "").toLowerCase().includes(search.toLowerCase()),
-  );
+      (p.category || "").toLowerCase().includes(search.toLowerCase());
+
+    const matchesCategory =
+      selectedCategory === "All" || p.category === selectedCategory;
+
+    return matchesSearch && matchesCategory;
+  });
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
-      <h1 className="text-3xl font-bold text-gray-800 mb-2">Explore Pitches</h1>
-      <p className="text-gray-500 mb-6">
-        Discover investment opportunities from product owners.
+      <div className="flex items-center gap-3 mb-2">
+        <div className="p-2 bg-indigo-100 text-indigo-600 rounded-md">
+          <Compass size={24} />
+        </div>
+        <h1 className="text-3xl font-extrabold text-gray-900">
+          Explore Pitches
+        </h1>
+      </div>
+      <p className="text-gray-500 mb-8 text-lg">
+        Discover the next big investment opportunity.
       </p>
 
-      <input
-        type="text"
-        placeholder="Search by title or category..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full border border-gray-300 rounded-lg px-4 py-2 mb-8 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-      />
+      {/* Search & Filters Section */}
+      <div className="mb-10 max-w-4xl">
+        <div className="relative mb-5 max-w-2xl">
+          <Search
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+            size={18}
+          />
+          <input
+            type="text"
+            placeholder="Search by title or category..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full border border-gray-300 rounded-md pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition"
+          />
+        </div>
 
+        {/* Sleek Category Filters */}
+        {!loading && categories.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase tracking-wider mr-2">
+              <Filter size={14} /> Filters:
+            </span>
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors cursor-pointer border ${
+                  selectedCategory === cat
+                    ? "bg-indigo-50 text-indigo-700 border-indigo-200" // Soft active state (Better UX)
+                    : "bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-800 hover:bg-gray-50"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Results Grid */}
       {loading ? (
-        <p className="text-gray-400">Loading pitches...</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="h-48 bg-gray-200 rounded-lg"></div>
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
-        <p className="text-gray-400">No pitches found.</p>
+        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-10 text-center">
+          <Search className="mx-auto text-gray-400 mb-3" size={32} />
+          <p className="text-gray-500 font-medium">
+            No pitches found matching your criteria.
+          </p>
+          <button
+            onClick={() => {
+              setSearch("");
+              setSelectedCategory("All");
+            }}
+            className="mt-4 text-indigo-600 font-medium hover:underline cursor-pointer"
+          >
+            Clear filters
+          </button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map((pitch) => (
@@ -652,6 +1855,7 @@ export default Home;
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useNavigate, Link } from "react-router";
+import { LogIn, Mail, Lock, AlertCircle } from "lucide-react";
 
 function Login() {
   const navigate = useNavigate();
@@ -668,58 +1872,138 @@ function Login() {
     setError("");
     setLoading(true);
 
-    const { error: loginError } = await supabase.auth.signInWithPassword({
-      email: form.email,
-      password: form.password,
-    });
+    const cleanEmail = form.email.trim();
 
-    if (loginError) {
-      setError(loginError.message);
+    try {
+      // 1. Attempt Auth Sign-In
+      const { data, error: loginError } =
+        await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: form.password,
+        });
+
+      if (loginError) throw loginError;
+
+      // 2. THE ZOMBIE CHECK: Verify that a profile actually exists for this user
+      if (data?.user) {
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", data.user.id)
+          .single();
+
+        if (profileError || !profileData) {
+          // If there's no profile, we must sign them out immediately
+          // so they aren't stuck in a broken "Logged In" state.
+          await supabase.auth.signOut();
+          throw new Error(
+            "Your account is missing a profile. Please register again or contact support.",
+          );
+        }
+      }
+
+      // Everything is valid
+      navigate("/dashboard");
+    } catch (err) {
+      // Map technical errors to user-friendly messages
+      let friendlyMessage = err.message;
+      if (err.message.includes("Invalid login credentials")) {
+        friendlyMessage = "Incorrect email or password. Please try again.";
+      } else if (err.message.includes("Email not confirmed")) {
+        friendlyMessage =
+          "Please confirm your email address before logging in.";
+      }
+
+      setError(friendlyMessage);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    navigate("/dashboard");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="bg-white p-8 rounded-2xl shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Welcome Back</h2>
-        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+    <div className="h-[calc(100vh-76px)] flex items-center justify-center bg-gray-50 px-4 overflow-hidden">
+      <div className="bg-white p-6 sm:p-8 rounded-xl shadow-lg w-full max-w-md border border-gray-200">
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3">
+            <LogIn size={24} />
+          </div>
+          <h2 className="text-2xl font-extrabold text-gray-900">
+            Welcome Back
+          </h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Log in to continue your journey.
+          </p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4 flex items-start gap-2 border border-red-100 font-medium animate-in fade-in slide-in-from-top-2">
+            <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-sm text-gray-600">Email</label>
+          <div className="relative">
+            <Mail
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+              size={18}
+            />
             <input
               name="email"
               type="email"
               required
+              autoFocus
+              placeholder="Email Address"
+              value={form.email}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="w-full border border-gray-300 rounded-md pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50/50"
             />
           </div>
           <div>
-            <label className="text-sm text-gray-600">Password</label>
-            <input
-              name="password"
-              type="password"
-              required
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
+            <div className="flex items-center justify-end mb-1">
+              <span className="text-xs text-indigo-600 hover:text-indigo-800 cursor-pointer font-medium transition">
+                Forgot Password?
+              </span>
+            </div>
+            <div className="relative">
+              <Lock
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+                size={18}
+              />
+              <input
+                name="password"
+                type="password"
+                required
+                placeholder="Password"
+                value={form.password}
+                onChange={handleChange}
+                className="w-full border border-gray-300 rounded-md pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50/50"
+              />
+            </div>
           </div>
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            className="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-md hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed mt-2 shadow-sm cursor-pointer flex justify-center items-center gap-2"
           >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Verifying...
+              </>
+            ) : (
+              "Log In"
+            )}
           </button>
         </form>
-        <p className="text-sm text-gray-500 mt-4 text-center">
-          No account?{" "}
-          <Link to="/register" className="text-indigo-600 hover:underline">
-            Register
+
+        <p className="text-sm text-gray-500 mt-6 text-center">
+          Don't have an account yet?{" "}
+          <Link
+            to="/register"
+            className="text-indigo-600 font-semibold hover:text-indigo-800 transition cursor-pointer"
+          >
+            Create one
           </Link>
         </p>
       </div>
@@ -732,9 +2016,25 @@ export default Login;
 
 <file path="src/pages/PitchDetail.jsx">
 import { useEffect, useState } from "react";
-import { useParams } from "react-router";
+import { useParams, Link } from "react-router";
 import { useSelector } from "react-redux";
 import { supabase } from "../lib/supabaseClient";
+import {
+  Tag,
+  PlayCircle,
+  Star,
+  CheckCircle,
+  UserCircle,
+  ArrowLeft,
+} from "lucide-react";
+
+// Helper function to extract YouTube Video ID
+function getYouTubeId(url) {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return match && match[2].length === 11 ? match[2] : null;
+}
 
 function PitchDetail() {
   const { id } = useParams();
@@ -743,109 +2043,223 @@ function PitchDetail() {
   const [owner, setOwner] = useState(null);
   const [interested, setInterested] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  const fetchPitch = async () => {
-    const { data } = await supabase
-      .from("pitches")
-      .select("*")
-      .eq("id", id)
-      .single();
-    setPitch(data);
-
-    if (data) {
-      const { data: ownerData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", data.owner_id)
-        .single();
-      setOwner(ownerData);
-    }
-
-    if (user) {
-      const { data: interestData } = await supabase
-        .from("interests")
-        .select("id")
-        .eq("investor_id", user.id)
-        .eq("pitch_id", id)
-        .single();
-      setInterested(!!interestData);
-    }
-
-    setLoading(false);
-  };
+  const [isToggling, setIsToggling] = useState(false);
 
   useEffect(() => {
-    fetchPitch();
-  }, [id]);
+    let isMounted = true;
+
+    const fetchPitchData = async () => {
+      setLoading(true);
+      try {
+        // 1. Fetch Pitch
+        const { data: pitchData, error: pitchError } = await supabase
+          .from("pitches")
+          .select("*")
+          .eq("id", id)
+          .single();
+
+        if (pitchError || !pitchData) {
+          if (isMounted) setPitch(null);
+          return;
+        }
+
+        if (isMounted) setPitch(pitchData);
+
+        // 2. Fetch Owner (Concurrent)
+        const { data: ownerData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", pitchData.owner_id)
+          .single();
+
+        if (isMounted) setOwner(ownerData);
+
+        // 3. Fetch Interest Status (Concurrent)
+        if (user) {
+          const { data: interestData } = await supabase
+            .from("interests")
+            .select("id")
+            .eq("investor_id", user.id)
+            .eq("pitch_id", id)
+            .single();
+
+          if (isMounted) setInterested(!!interestData);
+        }
+      } catch (err) {
+        console.error("Error loading pitch:", err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchPitchData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, user]);
 
   const toggleInterest = async () => {
     if (!user) return alert("Please login to express interest.");
 
-    if (interested) {
-      await supabase
-        .from("interests")
-        .delete()
-        .eq("investor_id", user.id)
-        .eq("pitch_id", id);
-      setInterested(false);
-    } else {
-      await supabase
-        .from("interests")
-        .insert({ investor_id: user.id, pitch_id: id });
-      setInterested(true);
+    setIsToggling(true);
+    try {
+      if (interested) {
+        const { error } = await supabase
+          .from("interests")
+          .delete()
+          .eq("investor_id", user.id)
+          .eq("pitch_id", id);
+
+        if (error) throw error;
+        setInterested(false);
+      } else {
+        const { error } = await supabase
+          .from("interests")
+          .insert({ investor_id: user.id, pitch_id: id });
+
+        if (error) throw error;
+        setInterested(true);
+      }
+    } catch (err) {
+      alert("Something went wrong: " + err.message);
+    } finally {
+      setIsToggling(false);
     }
   };
 
-  if (loading)
-    return <p className="text-center mt-20 text-gray-400">Loading...</p>;
-  if (!pitch)
-    return <p className="text-center mt-20 text-gray-400">Pitch not found.</p>;
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto px-6 py-20 flex flex-col items-center justify-center text-center">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-gray-500 font-medium animate-pulse">
+          Loading pitch details...
+        </p>
+      </div>
+    );
+  }
+
+  if (!pitch) {
+    return (
+      <div className="max-w-3xl mx-auto px-6 py-20 text-center">
+        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-12">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Pitch Not Found
+          </h2>
+          <p className="text-gray-500 mb-6">
+            The pitch you are looking for may have been deleted or moved.
+          </p>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-indigo-600 font-bold hover:text-indigo-800 transition cursor-pointer"
+          >
+            <ArrowLeft size={18} /> Back to Explore
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const youtubeId = getYouTubeId(pitch.video_url);
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
-      <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-indigo-600 transition mb-6 cursor-pointer"
+      >
+        <ArrowLeft size={16} /> Back to All Pitches
+      </Link>
+
+      <span className="inline-flex items-center gap-1.5 text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-md font-semibold border border-indigo-100">
+        <Tag size={14} />
         {pitch.category || "General"}
       </span>
-      <h1 className="text-3xl font-bold text-gray-800 mt-3">{pitch.title}</h1>
-      <p className="text-gray-500 mt-4 leading-relaxed">{pitch.description}</p>
 
-      <div className="mt-6 p-4 bg-gray-50 rounded-xl">
-        <p className="text-sm text-gray-500">Funding Goal</p>
-        <p className="text-2xl font-bold text-indigo-600">
-          ${Number(pitch.funding_goal).toLocaleString()}
-        </p>
+      <h1 className="text-4xl font-extrabold text-gray-900 mt-4 leading-tight">
+        {pitch.title}
+      </h1>
+
+      <p className="text-gray-600 mt-5 text-lg leading-relaxed whitespace-pre-wrap">
+        {pitch.description}
+      </p>
+
+      <div className="mt-8 p-6 bg-gradient-to-br from-indigo-50 to-white border border-indigo-100 rounded-lg shadow-sm flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-wider">
+            Funding Goal
+          </p>
+          <p className="text-3xl font-black text-gray-900 mt-1">
+            ${Number(pitch.funding_goal).toLocaleString()}
+          </p>
+        </div>
       </div>
 
       {pitch.video_url && (
-        <div className="mt-6">
-          <a
-            href={pitch.video_url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-indigo-600 underline text-sm"
-          >
-            ▶ Watch Pitch Video
-          </a>
+        <div className="mt-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">
+            Pitch Deck Video
+          </h2>
+          {youtubeId ? (
+            <div className="w-full aspect-video rounded-xl overflow-hidden shadow-md bg-black">
+              <iframe
+                className="w-full h-full"
+                src={`https://www.youtube.com/embed/${youtubeId}?rel=0`}
+                title="YouTube video player"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              ></iframe>
+            </div>
+          ) : (
+            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg inline-block">
+              <a
+                href={pitch.video_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 text-indigo-600 font-medium hover:text-indigo-800 transition cursor-pointer"
+              >
+                <PlayCircle size={20} /> Watch Video (External Link)
+              </a>
+            </div>
+          )}
         </div>
       )}
 
-      {owner && (
-        <div className="mt-8 p-4 border border-gray-200 rounded-xl">
-          <p className="text-sm text-gray-500">Posted by</p>
-          <p className="font-semibold text-gray-800">{owner.full_name}</p>
+      <div className="mt-8 flex items-center gap-4 p-5 border border-gray-200 rounded-lg bg-white shadow-sm">
+        <UserCircle className="text-gray-400" size={48} strokeWidth={1} />
+        <div>
+          <p className="text-sm text-gray-500 font-medium">Posted by</p>
+          <p className="font-bold text-gray-900 text-lg">
+            {owner?.full_name || "Unknown Owner"}
+          </p>
         </div>
-      )}
+      </div>
 
       {profile?.role === "investor" && (
         <button
           onClick={toggleInterest}
-          className={`mt-6 px-6 py-3 rounded-lg font-semibold transition ${
+          disabled={isToggling}
+          className={`mt-8 w-full sm:w-auto px-8 py-3.5 rounded-md font-bold text-base transition-all shadow-sm cursor-pointer flex justify-center items-center gap-2 ${
             interested
-              ? "bg-red-100 text-red-600 hover:bg-red-200"
-              : "bg-indigo-600 text-white hover:bg-indigo-700"
-          }`}
+              ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+              : "bg-indigo-600 text-white border border-transparent hover:bg-indigo-700 hover:shadow-md"
+          } ${isToggling ? "opacity-70 cursor-not-allowed" : ""}`}
         >
-          {interested ? "✓ Remove Interest" : "⭐ Express Interest"}
+          {isToggling ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Processing...
+            </>
+          ) : interested ? (
+            <>
+              <CheckCircle size={20} /> Interest Expressed (Click to Remove)
+            </>
+          ) : (
+            <>
+              <Star size={20} /> Express Interest in this Pitch
+            </>
+          )}
         </button>
       )}
     </div>
@@ -857,39 +2271,77 @@ export default PitchDetail;
 
 <file path="src/pages/Profile.jsx">
 import { useSelector } from "react-redux";
+import { User, Mail, Shield, Calendar, UserCircle } from "lucide-react";
 
 function Profile() {
   const { user, profile } = useSelector((state) => state.auth);
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-10">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6">My Profile</h1>
-      <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm space-y-4">
-        <div>
-          <p className="text-sm text-gray-500">Full Name</p>
-          <p className="text-gray-800 font-medium">
-            {profile?.full_name || "—"}
-          </p>
+      <h1 className="text-3xl font-extrabold text-gray-900 mb-6 flex items-center gap-3">
+        <UserCircle className="text-indigo-600" size={32} />
+        My Profile
+      </h1>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm space-y-6">
+        <div className="flex items-start gap-4 pb-6 border-b border-gray-100">
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
+            <User size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Full Name
+            </p>
+            <p className="text-xl font-bold text-gray-900 mt-1">
+              {profile?.full_name || "—"}
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-sm text-gray-500">Email</p>
-          <p className="text-gray-800 font-medium">{user?.email}</p>
+
+        <div className="flex items-start gap-4 pb-6 border-b border-gray-100">
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
+            <Mail size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Email Address
+            </p>
+            <p className="text-lg font-medium text-gray-800 mt-1">
+              {user?.email}
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-sm text-gray-500">Role</p>
-          <span className="inline-block bg-indigo-100 text-indigo-700 text-sm px-3 py-1 rounded-full capitalize">
-            {profile?.role}
-          </span>
+
+        <div className="flex items-start gap-4 pb-6 border-b border-gray-100">
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
+            <Shield size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Account Role
+            </p>
+            <span className="inline-block bg-indigo-100 text-indigo-700 text-sm font-bold px-3 py-1 rounded-md capitalize mt-2 border border-indigo-200">
+              {profile?.role}
+            </span>
+          </div>
         </div>
-        <div>
-          <p className="text-sm text-gray-500">Bio</p>
-          <p className="text-gray-800">{profile?.bio || "No bio added yet."}</p>
-        </div>
-        <div>
-          <p className="text-sm text-gray-500">Member Since</p>
-          <p className="text-gray-800">
-            {new Date(profile?.created_at).toLocaleDateString()}
-          </p>
+
+        <div className="flex items-start gap-4">
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
+            <Calendar size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Member Since
+            </p>
+            <p className="text-lg font-medium text-gray-800 mt-1">
+              {new Date(profile?.created_at).toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -903,6 +2355,15 @@ export default Profile;
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useNavigate, Link } from "react-router";
+import {
+  Briefcase,
+  Rocket,
+  User,
+  Mail,
+  Lock,
+  UserPlus,
+  AlertCircle,
+} from "lucide-react";
 
 function Register() {
   const navigate = useNavigate();
@@ -922,98 +2383,196 @@ function Register() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+
+    // 1. Client-side Validation
+    const cleanEmail = form.email.trim();
+    const cleanName = form.full_name.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!cleanName) {
+      setError("Please enter your full name.");
+      return;
+    }
+
+    if (!emailRegex.test(cleanEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    if (form.password.length < 6) {
+      setError("Password must be at least 6 characters long.");
+      return;
+    }
+
     setLoading(true);
 
-    // 1. Sign up with Supabase Auth
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-    });
+    try {
+      // 2. Auth Sign Up
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: form.password,
+      });
 
-    if (signUpError) {
-      setError(signUpError.message);
+      if (signUpError) throw signUpError;
+
+      if (data?.user?.id) {
+        // 3. Profile Creation
+        const { error: profileError } = await supabase.from("profiles").insert({
+          id: data.user.id,
+          full_name: cleanName,
+          role: form.role,
+        });
+
+        if (profileError) {
+          // This is the "Zombie User" edge case.
+          // In a production app, use a PostgreSQL trigger to automate this.
+          console.error("Profile creation failed:", profileError.message);
+          throw new Error(
+            "Account created, but we couldn't set up your profile. Please try logging in or contact support.",
+          );
+        }
+      } else {
+        throw new Error("Registration failed. Please try again.");
+      }
+
+      // Success!
+      navigate("/dashboard");
+    } catch (err) {
+      // Handle "User already registered" specifically
+      if (err.message.toLowerCase().includes("already registered")) {
+        setError("This email is already in use. Try logging in instead.");
+      } else {
+        setError(err.message);
+      }
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // 2. Insert profile into profiles table
-    const { error: profileError } = await supabase.from("profiles").insert({
-      id: data.user.id,
-      full_name: form.full_name,
-      role: form.role,
-    });
-
-    if (profileError) {
-      setError(profileError.message);
-      setLoading(false);
-      return;
-    }
-
-    navigate("/dashboard");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="bg-white p-8 rounded-2xl shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">
-          Create Account
-        </h2>
-        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+    <div className="h-[calc(100vh-76px)] flex items-center justify-center bg-gray-50 px-4 overflow-hidden">
+      <div className="bg-white p-6 sm:p-8 rounded-xl shadow-lg w-full max-w-lg border border-gray-200">
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3">
+            <UserPlus size={24} />
+          </div>
+          <h2 className="text-2xl font-extrabold text-gray-900">
+            Join InvestHub
+          </h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Select your path to get started.
+          </p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4 flex items-start gap-2 border border-red-100 font-medium animate-in fade-in slide-in-from-top-2">
+            <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-sm text-gray-600">Full Name</label>
+          {/* Role Selection */}
+          <div className="grid grid-cols-2 gap-3 mb-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, role: "investor" })}
+              className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-md font-semibold text-sm transition-all border-2 cursor-pointer ${
+                form.role === "investor"
+                  ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm"
+                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50"
+              }`}
+            >
+              <Briefcase size={16} /> Investor
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, role: "owner" })}
+              className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-md font-semibold text-sm transition-all border-2 cursor-pointer ${
+                form.role === "owner"
+                  ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm"
+                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50"
+              }`}
+            >
+              <Rocket size={16} /> Product Owner
+            </button>
+          </div>
+
+          {/* Input Fields */}
+          <div className="relative">
+            <User
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+              size={18}
+            />
             <input
               name="full_name"
               type="text"
               required
+              placeholder="Full Name"
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              value={form.full_name}
+              className="w-full border border-gray-300 rounded-md pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50/50"
             />
           </div>
-          <div>
-            <label className="text-sm text-gray-600">Email</label>
+          <div className="relative">
+            <Mail
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+              size={18}
+            />
             <input
               name="email"
               type="email"
               required
+              placeholder="Email Address"
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              value={form.email}
+              className="w-full border border-gray-300 rounded-md pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50/50"
             />
           </div>
-          <div>
-            <label className="text-sm text-gray-600">Password</label>
+          <div className="relative">
+            <Lock
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+              size={18}
+            />
             <input
               name="password"
               type="password"
               required
+              placeholder="Password (min 6 chars)"
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              value={form.password}
+              className="w-full border border-gray-300 rounded-md pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50/50"
             />
           </div>
-          <div>
-            <label className="text-sm text-gray-600">I am a...</label>
-            <select
-              name="role"
-              onChange={handleChange}
-              value={form.role}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            >
-              <option value="investor">Investor</option>
-              <option value="owner">Product Owner</option>
-            </select>
-          </div>
+
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            className="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-md hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed mt-2 cursor-pointer shadow-sm flex justify-center items-center gap-2"
           >
-            {loading ? "Creating account..." : "Register"}
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Setting up account...
+              </>
+            ) : (
+              "Create Account"
+            )}
           </button>
         </form>
-        <p className="text-sm text-gray-500 mt-4 text-center">
+
+        <p className="text-xs text-gray-400 mt-4 text-center italic">
+          Note: You may be asked to confirm your email address to activate your
+          account.
+        </p>
+
+        <p className="text-sm text-gray-500 mt-6 text-center">
           Already have an account?{" "}
-          <Link to="/login" className="text-indigo-600 hover:underline">
-            Login
+          <Link
+            to="/login"
+            className="text-indigo-600 font-semibold hover:text-indigo-800 transition cursor-pointer"
+          >
+            Log in here
           </Link>
         </p>
       </div>
@@ -1059,56 +2618,13 @@ export const { setUser, setProfile, clearAuth, setLoading } = authSlice.actions;
 export default authSlice.reducer;
 </file>
 
-<file path="src/store/slices/pitchSlice.js">
-import { createSlice } from "@reduxjs/toolkit";
-
-const initialState = {
-  pitches: [],
-  loading: false,
-  error: null,
-};
-
-const pitchSlice = createSlice({
-  name: "pitch",
-  initialState,
-  reducers: {
-    setPitches(state, action) {
-      state.pitches = action.payload;
-    },
-    addPitch(state, action) {
-      state.pitches.unshift(action.payload);
-    },
-    removePitch(state, action) {
-      state.pitches = state.pitches.filter((p) => p.id !== action.payload);
-    },
-    setPitchLoading(state, action) {
-      state.loading = action.payload;
-    },
-    setPitchError(state, action) {
-      state.error = action.payload;
-    },
-  },
-});
-
-export const {
-  setPitches,
-  addPitch,
-  removePitch,
-  setPitchLoading,
-  setPitchError,
-} = pitchSlice.actions;
-export default pitchSlice.reducer;
-</file>
-
 <file path="src/store/store.js">
 import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./slices/authSlice";
-import pitchReducer from "./slices/pitchSlice";
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
-    pitch: pitchReducer,
   },
 });
 </file>
